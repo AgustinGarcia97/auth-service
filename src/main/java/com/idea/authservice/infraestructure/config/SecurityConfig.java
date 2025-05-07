@@ -1,9 +1,7 @@
 package com.idea.authservice.infraestructure.config;
 
-
-
-
 import com.idea.authservice.infraestructure.security.JwtAuthenticationFilter;
+import com.idea.authservice.infraestructure.security.SecurityEventLogger;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -13,12 +11,14 @@ import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.HeaderWriterFilter;
 
 import static org.springframework.security.config.Customizer.withDefaults;
 import static org.springframework.security.config.http.SessionCreationPolicy.STATELESS;
-
 
 /*
 Esta clase configura cual sera la seguridad HTTP. Es una cadena de responsabilidad de seguridad
@@ -28,7 +28,6 @@ de configuraciones.
 
 */
 
-
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor
@@ -37,6 +36,9 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final AuthenticationProvider authenticationProvider;
+    private final SecurityEventLogger securityEventLogger;
+    private final RateLimiterConfig rateLimiterConfig;
+    private final HeaderWriterFilter headerWriterFilter;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -47,22 +49,23 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .anyRequest()
                         .authenticated())
-
                 .sessionManagement(session -> session.sessionCreationPolicy(STATELESS))
                 .authenticationProvider(authenticationProvider)
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(headerWriterFilter, HeaderWriterFilter.class);
 
         return http.build();
     }
 
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder(12);
+    }
 }
-
-
 
 //aca se verifica, que endpoints de la app, tendrian que pedir autorizacion, y cuales no. Y ademas que endpoints voy a querer que solo accedan aquellos request que pertenezcan a usuario
 //y rol en particular
 
 //Todos los put y post de producto tendrian que tener un rol de ADMIN
-
 
 //para ver a nivel codigo que el token no fue manipulado ver clase JwtAuthenticationFilter

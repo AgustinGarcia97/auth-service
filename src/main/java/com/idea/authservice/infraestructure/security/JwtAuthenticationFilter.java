@@ -1,6 +1,6 @@
 package com.idea.authservice.infraestructure.security;
 
-
+import com.idea.authservice.infraestructure.config.RateLimiterConfig;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,11 +31,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
+    private final SecurityEventLogger securityEventLogger;
+    private final RateLimiterConfig rateLimiterConfig;
 
     @Autowired
-    public JwtAuthenticationFilter(JwtService jwtService, UserDetailsService userDetailsService) {
+    public JwtAuthenticationFilter(JwtService jwtService, UserDetailsService userDetailsService, SecurityEventLogger securityEventLogger, RateLimiterConfig rateLimiterConfig) {
         this.jwtService = jwtService;
         this.userDetailsService = userDetailsService;
+        this.securityEventLogger = securityEventLogger;
+        this.rateLimiterConfig = rateLimiterConfig;
     }
 
 
@@ -48,6 +52,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response,
                                     @NonNull FilterChain filterChain)
             throws ServletException, IOException {
+        
+        // Check rate limiting
+        String clientIp = getClientIP(request);
+        if (rateLimiterConfig.isRateLimitExceeded(clientIp)) {
+            response.setStatus(HttpServletResponse.SC_TOO_MANY_REQUESTS);
+            return;
+        }
+
         final String authHeader = request.getHeader("Authorization"); //header
         final String jwt;
         final String userEmail;
@@ -72,10 +84,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 authToken.setDetails(
                         new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authToken);
+                
+                // Log successful token validation
+                securityEventLogger.logTokenValidation(userEmail, clientIp);
+            } else {
+                // Log failed token validation
+                securityEventLogger.logSecurityEvent("Invalid Token", userEmail, clientIp);
             }
         }
 
         filterChain.doFilter(request, response);
 
+    }
+
+    private String getClientIP(HttpServletRequest request) {
+        String xfHeader = request.getHeader("X-Forwarded-For");
+        if (xfHeader == null) {
+            return request.getRemoteAddr();
+        }
+        return xfHeader.split(",")[0];
     }
 }
