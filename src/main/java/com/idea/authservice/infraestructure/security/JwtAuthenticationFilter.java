@@ -33,13 +33,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final UserDetailsService userDetailsService;
     private final SecurityEventLogger securityEventLogger;
     private final RateLimiterConfig rateLimiterConfig;
+    private final MFAService mfaService;
 
     @Autowired
-    public JwtAuthenticationFilter(JwtService jwtService, UserDetailsService userDetailsService, SecurityEventLogger securityEventLogger, RateLimiterConfig rateLimiterConfig) {
+    public JwtAuthenticationFilter(JwtService jwtService, UserDetailsService userDetailsService, SecurityEventLogger securityEventLogger, RateLimiterConfig rateLimiterConfig, MFAService mfaService) {
         this.jwtService = jwtService;
         this.userDetailsService = userDetailsService;
         this.securityEventLogger = securityEventLogger;
         this.rateLimiterConfig = rateLimiterConfig;
+        this.mfaService = mfaService;
     }
 
 
@@ -56,7 +58,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // Check rate limiting
         String clientIp = getClientIP(request);
         if (rateLimiterConfig.isRateLimitExceeded(clientIp)) {
-            response.setStatus(HttpServletResponse.SC_TOO_MANY_REQUESTS);
+            response.setStatus(429); // 429 Too Many Requests
+            response.getWriter().write("Rate limit exceeded");
             return;
         }
 
@@ -64,7 +67,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         final String jwt;
         final String userEmail;
         //aca valida si el header es nulo
-        if (authHeader == null || !authHeader.startsWith("Bearer")) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -76,7 +79,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             //userdetail permite rellenar la informacion del usuario, y almacenarlo en el securityContextHolder
             UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail); //va a la db a buscar los datos
             if (jwtService.isTokenValid(jwt, userDetails)) { //aca valida el token -ver JwtService para entender
-                //ahora explica la parte del package auth
+                // Check if MFA is required
+                String mfaCode = request.getHeader("X-MFA-Code");
+                if (mfaCode != null && !mfaCode.isEmpty()) {
+                    // Verify MFA code
+                    if (!mfaService.verifyCode(userDetails.getUsername(), Integer.parseInt(mfaCode), userEmail, clientIp)) {
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        response.getWriter().write("Invalid MFA code");
+                        return;
+                    }
+                }
+
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                         userDetails,
                         null,
