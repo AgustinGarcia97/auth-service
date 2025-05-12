@@ -3,6 +3,8 @@ package com.idea.authservice.domain.model;
 import com.idea.authservice.domain.model.enums.Role;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.UuidGenerator;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -21,13 +23,15 @@ import java.util.UUID;
 @Builder
 public class User implements UserDetails {
     @Id
+
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
-    @Column(unique=true, nullable=false)
+    @Column( nullable=false,unique=true)
     private String username;
-    @Column(unique=true, nullable=false)
+    @Column(nullable=false)
     private String password;
-    @Column(unique=true, nullable=false)
+    @Column(nullable=false)
+    @Enumerated(EnumType.STRING)
     private Role role;
 
 
